@@ -1,0 +1,84 @@
+name: Weekly
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # every week on sunday
+    - cron: "0 0 * * SUN"
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.recent_activity.outputs.json }}
+      text: ${{ steps.recent_activity.outputs.text }}
+    steps:
+      - name: Reading...
+        run: |
+          echo "Reading..."
+
+      - name: Get Activity
+        uses: or13/github-api-actions@v0.0.2
+        id: recent_activity
+        with:
+          access-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          search: "is:merged is:pr is:public archived:false author:OR13 -user:OR13"
+          limit: 10
+
+      - name: Review the results
+        run: |-
+          echo "${{ steps.recent_activity.outputs.text }}"
+
+  analyze:
+    needs:
+      - read
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.completion.outputs.json }}
+      text: ${{ steps.completion.outputs.text }}
+    steps:
+      - name: Analyzing...
+        run: |
+          echo "Analyzing..."
+          echo '${{needs.read.outputs.json}}' | jq
+      - name: Open AI Completion
+        uses: or13/open-ai@v0.0.3
+        id: completion
+        with:
+          api-key: ${{ secrets.OPENAI_API_KEY }}
+          engine: "text-davinci-002"
+          temperature: 0.7
+          max_tokens: 100
+          top_p: 1.0
+          frequency_penalty: 0.0
+          presence_penalty: 0.0
+          prompt: |-
+
+            Summarize this developer's recent activity in a few sentences
+
+            ${{ needs.read.outputs.text }}
+
+            Tl;dr
+
+      - name: Review the Summary
+        run: |-
+          echo "${{ steps.completion.outputs.text }}"
+
+  update_profile:
+    needs:
+      - read
+      - analyze
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Prepare summary
+        run: |-
+          echo '${{ needs.analyze.outputs.text }}' > summary.md
+          cat profile-header.md summary.md > README.md
+
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: GPT-3 activity summary updated.
+          file_pattern: README.md
